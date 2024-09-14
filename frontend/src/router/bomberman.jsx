@@ -1,8 +1,8 @@
 /** @jsx MiniFramework.createElement */
 import { MiniFramework } from "../utils/mini-framework";
 
-const GRID_SIZE = 10;
-const CELL_SIZE = 40; // px
+const GRID_SIZE = 15;
+const CELL_SIZE = 35; // px
 
 export const Bomberman = () => {
   const [socket, setSocket] = MiniFramework.useState(null);
@@ -126,7 +126,10 @@ export const Bomberman = () => {
   return (
     <div className="bomberman-game p-4">
       <div id="game-container" className="relative">
-        <div id="game-board" className="grid grid-cols-10 gap-0 w-max mx-auto">
+      <div 
+          id="game-board" 
+          className="grid grid-cols-15 gap-0"
+        >
           {/* Grid cells will be dynamically added here */}
         </div>
         <div id="players-container" className="absolute top-0 left-0">

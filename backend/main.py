@@ -14,7 +14,7 @@ game_state = {
     "powerUps": []
 }
 
-GRID_SIZE = 10
+GRID_SIZE = 15
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: int):
