@@ -9,6 +9,7 @@ app = FastAPI()
 GRID_SIZE = 15
 EXPLOSION_DURATION = 1  # seconds
 EXPLOSION_RANGE = 1  # tiles in each direction
+SPAWN_POSITIONS = [(0, 0), (GRID_SIZE-1, 0), (0, GRID_SIZE-1), (GRID_SIZE-1, GRID_SIZE-1)]
 
 # Dictionary to hold WebSocket connections and user data
 connected_clients: Dict[int, WebSocket] = {}
@@ -28,10 +29,15 @@ def generate_walls():
             # Add fixed walls in a grid pattern
             if x % 2 == 1 and y % 2 == 1:
                 walls.append({"x": x, "y": y})
-            # Add random breakable walls
-            elif (x > 1 or y > 1) and random.random() < 0.4:  # 40% chance for a breakable wall
-                walls.append({"x": x, "y": y})
+            # Add random breakable walls, avoiding spawn areas
+            elif random.random() < 0.4:
+                # Check if the current position is not in or adjacent to a spawn area
+                if not any((x in range(sx, sx+2) and y in range(sy, sy+2)) for sx, sy in SPAWN_POSITIONS):
+                    walls.append({"x": x, "y": y})
     return walls
+
+def get_spawn_position(player_index):
+    return SPAWN_POSITIONS[player_index % len(SPAWN_POSITIONS)]
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: int):
@@ -40,16 +46,19 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
     
     try:
         # Initialize player
-        player = {"id": client_id, "x": 1, "y": 1, "health": 3}
+        player_index = len(game_state["players"])
+        spawn_x, spawn_y = get_spawn_position(player_index)
+        player = {"id": client_id, "x": spawn_x, "y": spawn_y, "health": 3}
         game_state["players"].append(player)
         
         # Generate walls if they don't exist
         if not game_state["walls"]:
             game_state["walls"] = generate_walls()
         
+        await broadcast_game_state()
+        
         while True:
             data = await websocket.receive_text()
-            print(data)
             await handle_message(client_id, data)
     finally:
         # Clean up when a client disconnects
@@ -123,8 +132,9 @@ async def move_player(client_id: int, direction: str):
     elif direction == "ArrowRight":
         new_x = min(GRID_SIZE - 1, player["x"] + 1)
     
-    # Check for collisions with walls (implement this based on your wall data structure)
-    if not any(w["x"] == new_x and w["y"] == new_y for w in game_state["walls"]):
+    # Check for collisions with walls and bombs
+    if not any(w["x"] == new_x and w["y"] == new_y for w in game_state["walls"]) and \
+       not any(b["x"] == new_x and b["y"] == new_y for b in game_state["bombs"]):
         player["x"], player["y"] = new_x, new_y
 
 async def broadcast_game_state():

@@ -118,6 +118,7 @@ export const Bomberman = () => {
         playerElement.style.backgroundColor = getPlayerColor(index);
         playerElement.style.borderRadius = '50%';
         playerElement.style.transition = 'all 0.1s ease-out';
+        playerElement.style.zIndex = '10';
         
         // Add health indicator
         const healthElement = document.createElement('div');
