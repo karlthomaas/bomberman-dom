@@ -10,7 +10,8 @@ export const Bomberman = () => {
     players: [],
     bombs: [],
     walls: [],
-    powerUps: []
+    powerUps: [],
+    explosions: []
   };
 
   MiniFramework.useEffect(() => {
@@ -77,8 +78,25 @@ export const Bomberman = () => {
       for (let y = 0; y < GRID_SIZE; y++) {
         for (let x = 0; x < GRID_SIZE; x++) {
           const cellElement = document.createElement('div');
-          cellElement.className = 'w-10 h-10 border border-gray-300 flex items-center justify-center';
-          cellElement.textContent = getCellContent(x, y);
+          cellElement.className = 'w-10 h-10 flex items-center justify-center';
+          
+          const cellContent = getCellContent(x, y);
+          if (cellContent === "🧱") {
+            cellElement.className += ' bg-gray-700'; // Dark background for walls
+          } else {
+            cellElement.className += ' bg-green-200'; // Light background for empty cells
+          }
+          cellElement.textContent = cellContent;
+          
+          // Add explosion effect
+          if (gameState.explosions.some(e => e.x === x && e.y === y)) {
+            cellElement.style.backgroundColor = 'red';
+            cellElement.style.transition = 'background-color 1s';
+            setTimeout(() => {
+              cellElement.style.backgroundColor = cellContent === "🧱" ? '#374151' : '#E5F3E5';
+            }, 1000);
+          }
+          
           gridElement.appendChild(cellElement);
         }
       }
@@ -100,6 +118,18 @@ export const Bomberman = () => {
         playerElement.style.backgroundColor = getPlayerColor(index);
         playerElement.style.borderRadius = '50%';
         playerElement.style.transition = 'all 0.1s ease-out';
+        
+        // Add health indicator
+        const healthElement = document.createElement('div');
+        healthElement.textContent = `HP: ${player.health}`;
+        healthElement.style.position = 'absolute';
+        healthElement.style.top = '-20px';
+        healthElement.style.left = '0';
+        healthElement.style.width = '100%';
+        healthElement.style.textAlign = 'center';
+        healthElement.style.fontSize = '12px';
+        playerElement.appendChild(healthElement);
+        
         playersContainer.appendChild(playerElement);
       });
     }
@@ -126,9 +156,13 @@ export const Bomberman = () => {
   return (
     <div className="bomberman-game p-4">
       <div id="game-container" className="relative">
-      <div 
+        <div 
           id="game-board" 
           className="grid grid-cols-15 gap-0"
+          style={{
+            width: `${GRID_SIZE * CELL_SIZE}px`,
+            height: `${GRID_SIZE * CELL_SIZE}px`,
+          }}
         >
           {/* Grid cells will be dynamically added here */}
         </div>
@@ -136,7 +170,7 @@ export const Bomberman = () => {
           {/* Player elements will be dynamically added here */}
         </div>
       </div>
-      <div className="debug-info mt-4">
+      <div className="debug-info overflow-y-scroll fixed top-0 left-0">
         <h3>Game State:</h3>
         <pre id="debug-info"></pre>
       </div>

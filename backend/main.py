@@ -2,8 +2,13 @@ from fastapi import FastAPI, WebSocket
 from typing import Dict, List
 import json
 import asyncio
+import random
 
 app = FastAPI()
+
+GRID_SIZE = 15
+EXPLOSION_DURATION = 1  # seconds
+EXPLOSION_RANGE = 1  # tiles in each direction
 
 # Dictionary to hold WebSocket connections and user data
 connected_clients: Dict[int, WebSocket] = {}
@@ -11,10 +16,22 @@ game_state = {
     "players": [],
     "bombs": [],
     "walls": [],
-    "powerUps": []
+    "powerUps": [],
+    "explosions": []
 }
 
-GRID_SIZE = 15
+
+def generate_walls():
+    walls = []
+    for y in range(GRID_SIZE):
+        for x in range(GRID_SIZE):
+            # Add fixed walls in a grid pattern
+            if x % 2 == 1 and y % 2 == 1:
+                walls.append({"x": x, "y": y})
+            # Add random breakable walls
+            elif (x > 1 or y > 1) and random.random() < 0.4:  # 40% chance for a breakable wall
+                walls.append({"x": x, "y": y})
+    return walls
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: int):
@@ -23,8 +40,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: int):
     
     try:
         # Initialize player
-        player = {"id": client_id, "x": 1, "y": 1}
+        player = {"id": client_id, "x": 1, "y": 1, "health": 3}
         game_state["players"].append(player)
+        
+        # Generate walls if they don't exist
+        if not game_state["walls"]:
+            game_state["walls"] = generate_walls()
         
         while True:
             data = await websocket.receive_text()
@@ -43,9 +64,48 @@ async def handle_message(client_id: int, message: str):
     if action == "move":
         await move_player(client_id, data["direction"])
     elif action == "plant_bomb":
-        await plant_bomb(client_id)
+        asyncio.create_task(plant_bomb(client_id))
     
     await broadcast_game_state()
+
+async def plant_bomb(client_id: int):
+    print("Planting bomb")  
+    player = next((p for p in game_state["players"] if p["id"] == client_id), None)
+    print("Player found")
+    if player:
+        bomb = {"x": player["x"], "y": player["y"], "playerId": client_id}
+        game_state["bombs"].append(bomb)
+        print("Bomb planted")
+        await asyncio.sleep(3)  # Bomb explodes after 3 seconds
+        await explode_bomb(bomb)
+
+async def explode_bomb(bomb):
+    print("Exploding bomb")
+    game_state["bombs"].remove(bomb)
+    explosions = []
+    directions = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+    
+    for dx, dy in directions:
+        x, y = bomb["x"] + dx, bomb["y"] + dy
+        if 0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE:
+            explosions.append({"x": x, "y": y})
+            # Remove walls if they exist at the explosion coordinates
+            game_state["walls"] = [w for w in game_state["walls"] if not (w["x"] == x and w["y"] == y)]
+    
+    game_state["explosions"] = explosions
+    await broadcast_game_state()
+    
+    # Check for player damage
+    for player in game_state["players"]:
+        if any(e["x"] == player["x"] and e["y"] == player["y"] for e in explosions):
+            player["health"] -= 1
+            if player["health"] <= 0:
+                game_state["players"].remove(player)
+    
+    await asyncio.sleep(EXPLOSION_DURATION)
+    game_state["explosions"] = []
+    await broadcast_game_state()
+
 
 async def move_player(client_id: int, direction: str):
     player = next((p for p in game_state["players"] if p["id"] == client_id), None)
@@ -66,12 +126,6 @@ async def move_player(client_id: int, direction: str):
     # Check for collisions with walls (implement this based on your wall data structure)
     if not any(w["x"] == new_x and w["y"] == new_y for w in game_state["walls"]):
         player["x"], player["y"] = new_x, new_y
-
-async def plant_bomb(client_id: int):
-    player = next((p for p in game_state["players"] if p["id"] == client_id), None)
-    if player:
-        bomb = {"x": player["x"], "y": player["y"], "playerId": client_id}
-        game_state["bombs"].append(bomb)
 
 async def broadcast_game_state():
     if connected_clients:
