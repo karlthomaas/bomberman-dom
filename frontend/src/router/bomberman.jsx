@@ -12,7 +12,7 @@ export const Bomberman = () => {
     walls: [],
     powerUps: [],
     explosions: []
-  };
+  };  
 
   MiniFramework.useEffect(() => {
     const ws = new WebSocket(`ws://localhost:8000/ws/${Date.now()}`);

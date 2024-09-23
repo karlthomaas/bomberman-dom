@@ -21,6 +21,8 @@ game_state = {
     "explosions": []
 }
 
+# List to hold lobby WebSocket connections
+lobby_clients: List[WebSocket] = []
 
 def generate_walls():
     walls = []
@@ -143,3 +145,47 @@ async def broadcast_game_state():
         await asyncio.gather(
             *[ws.send_text(message) for ws in connected_clients.values()]
         )
+
+@app.websocket("/lobby")
+async def lobby_websocket(websocket: WebSocket):
+    await websocket.accept()
+    lobby_clients.append(websocket)
+    
+    try:
+        await broadcast_lobby_state()
+        
+        while True:
+            data = await websocket.receive_json()
+            if data.get("action") == "startGame":
+                await start_game()
+    except WebSocketDisconnect:
+        lobby_clients.remove(websocket)
+        await broadcast_lobby_state()
+
+async def broadcast_lobby_state():
+    if lobby_clients:
+        player_list = [f"Player {i+1}" for i in range(len(lobby_clients))]
+        message = json.dumps({"type": "playerList", "players": player_list})
+        await asyncio.gather(
+            *[client.send_text(message) for client in lobby_clients]
+        )
+
+async def start_game():
+    if lobby_clients:
+        message = json.dumps({"type": "gameStart"})
+        await asyncio.gather(
+            *[client.send_text(message) for client in lobby_clients]
+        )
+    
+    # Reset the game state
+    global game_state
+    game_state = {
+        "players": [],
+        "bombs": [],
+        "walls": [],
+        "powerUps": [],
+        "explosions": []
+    }
+    
+    # Generate new walls
+    game_state["walls"] = generate_walls()
