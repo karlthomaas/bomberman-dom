@@ -1,9 +1,21 @@
 /** @jsx MiniFramework.createElement */
 import { MiniFramework } from "../utils/mini-framework";
 
+
+function useRef(initialValue) {
+  const [ref] = MiniFramework.useState({ current: initialValue });
+  return ref;
+}
+
 export const Lobby = () => {
   const [players, setPlayers] = MiniFramework.useState([]);
   const [socket, setSocket] = MiniFramework.useState(null);
+  const setPlayersRef = useRef(setPlayers);
+  
+  MiniFramework.useEffect(() => {
+    setPlayersRef.current = setPlayers;
+  }, [setPlayers]);
+
 
   MiniFramework.useEffect(() => {
     const ws = new WebSocket(`ws://localhost:8000/lobby`);
@@ -16,7 +28,7 @@ export const Lobby = () => {
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
       if (data.type === 'playerList') {
-        setPlayers(data.players);
+        setPlayersRef.current(data.players);
       } else if (data.type === 'gameStart') {
         window.location.href = '/game';
       }
@@ -24,12 +36,6 @@ export const Lobby = () => {
 
     ws.onclose = () => {
       console.log('Lobby WebSocket connection closed');
-    };
-
-    return () => {
-      if (ws) {
-        ws.close();
-      }
     };
   }, []);
 

@@ -269,7 +269,6 @@ function useState(initial) {
   })
 
   const setState = action => {
-    console.log("setState", action);
     hook.queue.push(action)
     wipRoot = {
       dom: currentRoot.dom,
