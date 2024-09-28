@@ -22,7 +22,7 @@ game_state = {
 }
 
 # List to hold lobby WebSocket connections
-lobby_clients: List[WebSocket] = []
+lobby_players: Dict[WebSocket, Dict] = {}
 
 def generate_walls():
     walls = []
@@ -149,7 +149,7 @@ async def broadcast_game_state():
 @app.websocket("/lobby")
 async def lobby_websocket(websocket: WebSocket):
     await websocket.accept()
-    lobby_clients.append(websocket)
+    lobby_players[websocket] = {"nickname": None}
     
     try:
         await broadcast_lobby_state()
@@ -158,23 +158,29 @@ async def lobby_websocket(websocket: WebSocket):
             data = await websocket.receive_json()
             if data.get("action") == "startGame":
                 await start_game()
+            elif data.get("action") == "setNickname":
+                nickname = data.get("nickname")
+                if nickname and isinstance(nickname, str):
+                    lobby_players[websocket]["nickname"] = nickname
+                    await websocket.send_json({"type": "nicknameSet"})
+                    await broadcast_lobby_state()
     except WebSocketDisconnect:
-        lobby_clients.remove(websocket)
+        del lobby_players[websocket]
         await broadcast_lobby_state()
 
 async def broadcast_lobby_state():
-    if lobby_clients:
-        player_list = [f"Player {i+1}" for i in range(len(lobby_clients))]
+    if lobby_players:
+        player_list = [player["nickname"] or f"Player {i+1}" for i, player in enumerate(lobby_players.values())]
         message = json.dumps({"type": "playerList", "players": player_list})
         await asyncio.gather(
-            *[client.send_text(message) for client in lobby_clients]
+            *[client.send_text(message) for client in lobby_players.keys()]
         )
 
 async def start_game():
-    if lobby_clients:
+    if lobby_players:
         message = json.dumps({"type": "gameStart"})
         await asyncio.gather(
-            *[client.send_text(message) for client in lobby_clients]
+            *[client.send_text(message) for client in lobby_players.keys()]
         )
     
     # Reset the game state
@@ -189,3 +195,18 @@ async def start_game():
     
     # Generate new walls
     game_state["walls"] = generate_walls()
+
+    # Add players to the game state
+    for i, (_, player_info) in enumerate(lobby_players.items()):
+        spawn_x, spawn_y = get_spawn_position(i)
+        player = {
+            "id": i,
+            "x": spawn_x,
+            "y": spawn_y,
+            "health": 3,
+            "nickname": player_info["nickname"] or f"Player {i+1}"
+        }
+        game_state["players"].append(player)
+
+    # Clear lobby players after starting the game
+    lobby_players.clear()
