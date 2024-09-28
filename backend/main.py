@@ -164,9 +164,18 @@ async def lobby_websocket(websocket: WebSocket):
                     lobby_players[websocket]["nickname"] = nickname
                     await websocket.send_json({"type": "nicknameSet"})
                     await broadcast_lobby_state()
+            elif data.get("type") == "chat":
+                await broadcast_chat_message(data)
     except WebSocketDisconnect:
         del lobby_players[websocket]
         await broadcast_lobby_state()
+
+async def broadcast_chat_message(message):
+    if lobby_players:
+        chat_message = json.dumps(message)
+        await asyncio.gather(
+            *[client.send_text(chat_message) for client in lobby_players.keys()]
+        )
 
 async def broadcast_lobby_state():
     if lobby_players:

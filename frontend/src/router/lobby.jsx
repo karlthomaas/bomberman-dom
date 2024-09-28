@@ -12,11 +12,14 @@ export const Lobby = () => {
   const [socket, setSocket] = MiniFramework.useState(null);
   const [nickname, setNickname] = MiniFramework.useState('');
   const [isJoined, setIsJoined] = MiniFramework.useState(false);
+  const [messages, setMessages] = MiniFramework.useState([]);
+  const [currentMessage, setCurrentMessage] = MiniFramework.useState('');
   const setPlayersRef = useRef(setPlayers);
-  
+  const setMessagesRef = useRef(setMessages);
   MiniFramework.useEffect(() => {
     setPlayersRef.current = setPlayers;
-  }, [setPlayers]);
+    setMessagesRef.current = setMessages;
+  }, [setPlayers, setMessages]);
 
 
   MiniFramework.useEffect(() => {
@@ -33,6 +36,11 @@ export const Lobby = () => {
         setPlayersRef.current(data.players);
       } else if (data.type === 'gameStart') {
         window.location.href = '/game';
+      } else if (data.type === 'chat') {
+        setMessagesRef.current(prevMessages => {
+          const newMessages = [...prevMessages, data];
+          return newMessages;
+        });
       }
     };
 
@@ -54,11 +62,19 @@ export const Lobby = () => {
     setIsJoined(true);
   };
 
+  const sendChatMessage = () => {
+    if (socket && socket.readyState === WebSocket.OPEN && currentMessage.trim() !== '') {
+      const messageData = { type: "chat", player: nickname, text: currentMessage.trim() };
+      socket.send(JSON.stringify(messageData));
+      setCurrentMessage('');
+    }
+  };
+
   return (
     <div className="lobby p-4">
       <h1 className="text-3xl font-bold mb-4">Bomberman Lobby</h1>
       {!isJoined ? (
-        <div className="nickname-form mb-4">
+      <div className="nickname-form mb-4">
         <input
           type="text"
           value={nickname}
@@ -68,6 +84,7 @@ export const Lobby = () => {
         />
         <button
           onClick={joinLobby}
+          // Disabled incase socket is not open
           disabled={!socket}
           className={`${socket ? 'bg-green-500 hover:bg-green-700' : 'bg-gray-400'} text-white font-bold py-2 px-4 rounded`}
         >
@@ -90,7 +107,33 @@ export const Lobby = () => {
           >
             Start Game
           </button>
+          <div className="chat mb-4">
+        <h3 className="text-xl font-semibold mb-2">Chat:</h3>
+        <div className="messages mb-2">
+          {messages.map((msg, index) => (
+            <div key={index}>{`${msg.player}: ${msg.text}`}</div>
+          ))}
         </div>
+            <input
+              type="text"
+              value={currentMessage}
+              onChange={(e) => setCurrentMessage(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+              sendChatMessage();
+            }
+          }}
+          placeholder="Send a message"
+              className="border p-2 mr-2"
+            />
+        </div>
+        <button
+          onClick={sendChatMessage}
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+        >
+          Send Message
+        </button>
+      </div>
       )}
     </div>
   );
