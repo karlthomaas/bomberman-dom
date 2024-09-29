@@ -15,7 +15,7 @@ export const Bomberman = () => {
   };  
 
   MiniFramework.useEffect(() => {
-    const ws = new WebSocket(`ws://localhost:8000/ws/${Date.now()}`);
+    const ws = new WebSocket(`ws://localhost:8000/ws/game`);
     
     ws.onopen = () => {
       console.log('WebSocket connection established');
@@ -23,9 +23,17 @@ export const Bomberman = () => {
     };
 
     ws.onmessage = (event) => {
-      const newGameState = JSON.parse(event.data);
-      console.log('Received new game state:', newGameState);
-      updateGameState(newGameState);
+      const data = JSON.parse(event.data);
+      console.log('Received new game state:', data);
+      
+      if (data.type === 'gameStateUpdate') {
+        updateGameState(data.state);
+      } else if (data.type === 'redirectToLobby') {
+        console.log('Redirecting to lobby');
+        window.location.href = '/';
+      } else {
+        console.log('Received unknown message type:', data);
+      }
     };
 
     ws.onclose = () => {

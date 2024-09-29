@@ -3,6 +3,7 @@ from typing import Dict, List
 import json
 import asyncio
 import random
+from starlette.requests import Request
 
 app = FastAPI()
 
@@ -11,8 +12,11 @@ EXPLOSION_DURATION = 1  # seconds
 EXPLOSION_RANGE = 1  # tiles in each direction
 SPAWN_POSITIONS = [(0, 0), (GRID_SIZE-1, 0), (0, GRID_SIZE-1), (GRID_SIZE-1, GRID_SIZE-1)]
 
-# Dictionary to hold WebSocket connections and user data
-connected_clients: Dict[int, WebSocket] = {}
+lobby_players: Dict[str, Dict] = {}
+
+connected_clients: Dict[str, Dict] = {}
+
+# Global game state
 game_state = {
     "players": [],
     "bombs": [],
@@ -20,9 +24,6 @@ game_state = {
     "powerUps": [],
     "explosions": []
 }
-
-# List to hold lobby WebSocket connections
-lobby_players: Dict[WebSocket, Dict] = {}
 
 def generate_walls():
     walls = []
@@ -41,50 +42,69 @@ def generate_walls():
 def get_spawn_position(player_index):
     return SPAWN_POSITIONS[player_index % len(SPAWN_POSITIONS)]
 
-@app.websocket("/ws/{client_id}")
-async def websocket_endpoint(websocket: WebSocket, client_id: int):
+@app.websocket("/ws/game")
+async def game_websocket(websocket: WebSocket):
     await websocket.accept()
-    connected_clients[client_id] = websocket
+    
+    user_id = websocket.cookies.get("userId")
+    
+    if not user_id:
+        await websocket.close(code=4000)
+        return
+    
+    connected_clients[user_id] = {"websocket": websocket}
     
     try:
-        # Initialize player
-        player_index = len(game_state["players"])
-        spawn_x, spawn_y = get_spawn_position(player_index)
-        player = {"id": client_id, "x": spawn_x, "y": spawn_y, "health": 3}
-        game_state["players"].append(player)
-        
-        # Generate walls if they don't exist
         if not game_state["walls"]:
             game_state["walls"] = generate_walls()
         
         await broadcast_game_state()
         
         while True:
-            data = await websocket.receive_text()
-            await handle_message(client_id, data)
+            data = await websocket.receive_json()
+            await handle_message(user_id, data)
     finally:
-        # Clean up when a client disconnects
-        del connected_clients[client_id]
-        game_state["players"] = [p for p in game_state["players"] if p["id"] != client_id]
+        print(f"🚀 Player {user_id} disconnected")
+        del connected_clients[user_id]
+        game_state["players"] = [p for p in game_state["players"] if p["id"] != user_id]
         await broadcast_game_state()
+        await check_player_count()
 
-async def handle_message(client_id: int, message: str):
-    data = json.loads(message)
+async def check_player_count():
+    if len(game_state["players"]) <= 1:
+        await reset_game_and_redirect_to_lobby()
+
+async def reset_game_and_redirect_to_lobby():
+    global game_state
+    game_state = {
+        "players": [],
+        "bombs": [],
+        "walls": [],
+        "powerUps": [],
+        "explosions": []
+    }
+    
+    redirect_message = json.dumps({"type": "redirectToLobby"})
+    await asyncio.gather(
+        *[client_info["websocket"].send_text(redirect_message) for client_info in connected_clients.values()]
+    )
+
+async def handle_message(user_id: str, data: dict):
     action = data.get("action")
     
     if action == "move":
-        await move_player(client_id, data["direction"])
+        await move_player(user_id, data["direction"])
     elif action == "plant_bomb":
-        asyncio.create_task(plant_bomb(client_id))
+        asyncio.create_task(plant_bomb(user_id))
     
     await broadcast_game_state()
 
-async def plant_bomb(client_id: int):
+async def plant_bomb(user_id: str):
     print("Planting bomb")  
-    player = next((p for p in game_state["players"] if p["id"] == client_id), None)
+    player = next((p for p in game_state["players"] if p["id"] == user_id), None)
     print("Player found")
     if player:
-        bomb = {"x": player["x"], "y": player["y"], "playerId": client_id}
+        bomb = {"x": player["x"], "y": player["y"], "playerId": user_id}
         game_state["bombs"].append(bomb)
         print("Bomb planted")
         await asyncio.sleep(3)  # Bomb explodes after 3 seconds
@@ -118,8 +138,8 @@ async def explode_bomb(bomb):
     await broadcast_game_state()
 
 
-async def move_player(client_id: int, direction: str):
-    player = next((p for p in game_state["players"] if p["id"] == client_id), None)
+async def move_player(user_id: str, direction: str):
+    player = next((p for p in game_state["players"] if p["id"] == user_id), None)
     if not player:
         return
 
@@ -141,55 +161,81 @@ async def move_player(client_id: int, direction: str):
 
 async def broadcast_game_state():
     if connected_clients:
-        message = json.dumps(game_state)
+        message = json.dumps({
+            "type": "gameStateUpdate",
+            "state": game_state
+        })
         await asyncio.gather(
-            *[ws.send_text(message) for ws in connected_clients.values()]
+            *[client_info["websocket"].send_text(message) for client_info in connected_clients.values()]
         )
 
 @app.websocket("/lobby")
 async def lobby_websocket(websocket: WebSocket):
     await websocket.accept()
-    lobby_players[websocket] = {"nickname": None}
+    
+    # Extract userId from cookies
+    user_id = websocket.cookies.get("userId")
+    
+    print(f"🚀 Lobby player {user_id} connected")
+    
+    if not user_id:
+        await websocket.close(code=4000)  # Close connection if userId is not present
+        return
     
     try:
-        await broadcast_lobby_state()
-        
         while True:
             data = await websocket.receive_json()
-            if data.get("action") == "startGame":
-                await start_game()
-            elif data.get("action") == "setNickname":
+            print(f"🚀 Received data: {data}")
+            if data.get("action") == "joinLobby":
+                print(f"🚀 Lobby player {user_id} joined")
                 nickname = data.get("nickname")
                 if nickname and isinstance(nickname, str):
-                    lobby_players[websocket]["nickname"] = nickname
-                    await websocket.send_json({"type": "nicknameSet"})
+                    lobby_players[user_id] = {"websocket": websocket, "nickname": nickname}
+                    await websocket.send_json({"type": "joinedLobby"})
                     await broadcast_lobby_state()
+            elif data.get("action") == "startGame":
+                await start_game()
             elif data.get("type") == "chat":
                 await broadcast_chat_message(data)
     except WebSocketDisconnect:
-        del lobby_players[websocket]
+        print("💀 WebSocket disconnected")
+    finally:
+        lobby_players.pop(user_id, None)
         await broadcast_lobby_state()
 
 async def broadcast_chat_message(message):
     if lobby_players:
-        chat_message = json.dumps(message)
-        await asyncio.gather(
-            *[client.send_text(chat_message) for client in lobby_players.keys()]
-        )
+        sender = lobby_players.get(message.get("userId"))
+        if sender:
+            chat_message = json.dumps({
+                "type": "chat",
+                "userId": message.get("userId"),
+                "nickname": sender["nickname"] or "Anonymous",
+                "text": message.get("text", "")
+            })
+            await asyncio.gather(
+                *[player["websocket"].send_text(chat_message) for player in lobby_players.values()]
+            )
 
 async def broadcast_lobby_state():
     if lobby_players:
-        player_list = [player["nickname"] or f"Player {i+1}" for i, player in enumerate(lobby_players.values())]
+        player_list = [
+            {
+                "userId": user_id,
+                "nickname": player_info["nickname"] or f"Player {i+1}"
+            }
+            for i, (user_id, player_info) in enumerate(lobby_players.items())
+        ]
         message = json.dumps({"type": "playerList", "players": player_list})
         await asyncio.gather(
-            *[client.send_text(message) for client in lobby_players.keys()]
+            *[player_info["websocket"].send_text(message) for player_info in lobby_players.values()]
         )
 
 async def start_game():
     if lobby_players:
         message = json.dumps({"type": "gameStart"})
         await asyncio.gather(
-            *[client.send_text(message) for client in lobby_players.keys()]
+            *[player_info["websocket"].send_text(message) for player_info in lobby_players.values()]
         )
     
     # Reset the game state
@@ -205,11 +251,13 @@ async def start_game():
     # Generate new walls
     game_state["walls"] = generate_walls()
 
+    print("🚀 Starting new game")
     # Add players to the game state
-    for i, (_, player_info) in enumerate(lobby_players.items()):
+    for i, (user_id, player_info) in enumerate(lobby_players.items()):
         spawn_x, spawn_y = get_spawn_position(i)
+        
         player = {
-            "id": i,
+            "id": user_id,
             "x": spawn_x,
             "y": spawn_y,
             "health": 3,
@@ -219,3 +267,8 @@ async def start_game():
 
     # Clear lobby players after starting the game
     lobby_players.clear()
+
+    # Broadcast the initial game state to all connected clients
+    await broadcast_game_state()
+
+# ... existing code ...
