@@ -196,20 +196,21 @@ async def lobby_websocket(websocket: WebSocket):
             elif data.get("action") == "startGame":
                 await start_game()
             elif data.get("type") == "chat":
-                await broadcast_chat_message(data)
+                await broadcast_chat_message(data, user_id)
     except WebSocketDisconnect:
         print("💀 WebSocket disconnected")
     finally:
         lobby_players.pop(user_id, None)
         await broadcast_lobby_state()
 
-async def broadcast_chat_message(message):
+async def broadcast_chat_message(message, author_id):
+    print(f"🚀 Broadcasting chat message from {author_id}: {message}, {lobby_players}")
     if lobby_players:
-        sender = lobby_players.get(message.get("userId"))
+        sender = lobby_players.get(author_id)
         if sender:
             chat_message = json.dumps({
                 "type": "chat",
-                "userId": message.get("userId"),
+                "userId": author_id,
                 "nickname": sender["nickname"] or "Anonymous",
                 "text": message.get("text", "")
             })

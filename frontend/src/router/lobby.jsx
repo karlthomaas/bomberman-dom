@@ -31,6 +31,7 @@ export const Lobby = () => {
     } else if (data.type === 'gameStart') {
       window.location.href = '/game';
     } else if (data.type === 'chat') {
+      console.log('Received chat message:', data);
       setMessagesRef.current(prevMessages => [...prevMessages, data]);
     }
   };
@@ -74,9 +75,9 @@ export const Lobby = () => {
     if (socket && socket.readyState === WebSocket.OPEN && currentMessage.trim() !== '') {
       const messageData = {
         type: 'chat',
-        userId: socket.userId,
         text: currentMessage.trim()
       };
+      console.log('Sending chat message:', messageData);
       socket.send(JSON.stringify(messageData));
       setCurrentMessage('');
     }
@@ -118,15 +119,16 @@ export const Lobby = () => {
           >
             Start Game
           </button>
-          <div className="chat mb-4">
+          <div className="chat mb-4 flex flex-col max-w-screen-lg">
             <h3 className="text-xl font-semibold mb-2">Chat:</h3>
             <div className="messages mb-2">
               {messages.map((msg, index) => (
                 <div key={index}>{`${msg.nickname}: ${msg.text}`}</div>
               ))}
             </div>
-            <input
-              type="text"
+            <div className="flex flex-row">
+              <input
+                type="text"
               value={currentMessage}
               onChange={(e) => setCurrentMessage(e.target.value)}
               onKeyPress={(e) => {
@@ -143,6 +145,7 @@ export const Lobby = () => {
             >
               Send Message
             </button>
+            </div>
           </div>
         </div>
       )}
