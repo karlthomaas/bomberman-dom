@@ -48,19 +48,26 @@ export const Bomberman = () => {
   }, []);
 
   MiniFramework.useEffect(() => {
-    const handleKeyPress = (e) => {
-      if (socket && socket.readyState === WebSocket.OPEN) {
-        const direction = {
-          'ArrowUp': 'ArrowUp',
-          'ArrowDown': 'ArrowDown',
-          'ArrowLeft': 'ArrowLeft',
-          'ArrowRight': 'ArrowRight'
-        }[e.key];
+    let lastMoveTime = 0;
+    const moveInterval = 500 / 3; // 3 moves per second
 
-        if (direction) {
-          socket.send(JSON.stringify({ action: 'move', direction }));
-        } else if (e.key === ' ') {
-          socket.send(JSON.stringify({ action: 'plant_bomb' }));
+    const handleKeyPress = (e) => {
+      const currentTime = Date.now();
+      if (currentTime - lastMoveTime >= moveInterval) {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          const direction = {
+            'ArrowUp': 'ArrowUp',
+            'ArrowDown': 'ArrowDown',
+            'ArrowLeft': 'ArrowLeft',
+            'ArrowRight': 'ArrowRight'
+          }[e.key];
+
+          if (direction) {
+            socket.send(JSON.stringify({ action: 'move', direction }));
+            lastMoveTime = currentTime;
+          } else if (e.key === ' ') {
+            socket.send(JSON.stringify({ action: 'plant_bomb' }));
+          }
         }
       }
     };

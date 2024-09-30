@@ -4,6 +4,7 @@ import json
 import asyncio
 import random
 from starlette.requests import Request
+from time import time
 
 app = FastAPI()
 
@@ -143,21 +144,24 @@ async def move_player(user_id: str, direction: str):
     if not player:
         return
 
-    new_x, new_y = player["x"], player["y"]
-    
-    if direction == "ArrowUp":
-        new_y = max(0, player["y"] - 1)
-    elif direction == "ArrowDown":
-        new_y = min(GRID_SIZE - 1, player["y"] + 1)
-    elif direction == "ArrowLeft":
-        new_x = max(0, player["x"] - 1)
-    elif direction == "ArrowRight":
-        new_x = min(GRID_SIZE - 1, player["x"] + 1)
-    
-    # Check for collisions with walls and bombs
-    if not any(w["x"] == new_x and w["y"] == new_y for w in game_state["walls"]) and \
-       not any(b["x"] == new_x and b["y"] == new_y for b in game_state["bombs"]):
-        player["x"], player["y"] = new_x, new_y
+    current_time = time()
+    if not hasattr(player, 'last_move_time') or current_time - player["last_move_time"] >= 1/3:
+        new_x, new_y = player["x"], player["y"]
+        
+        if direction == "ArrowUp":
+            new_y = max(0, player["y"] - 1)
+        elif direction == "ArrowDown":
+            new_y = min(GRID_SIZE - 1, player["y"] + 1)
+        elif direction == "ArrowLeft":
+            new_x = max(0, player["x"] - 1)
+        elif direction == "ArrowRight":
+            new_x = min(GRID_SIZE - 1, player["x"] + 1)
+        
+        # Check for collisions with walls and bombs
+        if not any(w["x"] == new_x and w["y"] == new_y for w in game_state["walls"]) and \
+           not any(b["x"] == new_x and b["y"] == new_y for b in game_state["bombs"]):
+            player["x"], player["y"] = new_x, new_y
+            player["last_move_time"] = current_time
 
 async def broadcast_game_state():
     if connected_clients:
