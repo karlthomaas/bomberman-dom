@@ -105,39 +105,73 @@ async def plant_bomb(user_id: str):
     player = next((p for p in game_state["players"] if p["id"] == user_id), None)
     print("Player found")
     if player:
-        bomb = {"x": player["x"], "y": player["y"], "playerId": user_id}
-        game_state["bombs"].append(bomb)
-        print("Bomb planted")
-        await asyncio.sleep(3)  # Bomb explodes after 3 seconds
-        await explode_bomb(bomb)
+        bombs_planted = sum(1 for bomb in game_state["bombs"] if bomb["playerId"] == user_id)
+        if bombs_planted < player.get("max_bombs", 1):
+            bomb = {
+                "x": player["x"], 
+                "y": player["y"], 
+                "playerId": user_id,
+                "range": player.get("flame_range", 1)
+            }
+            game_state["bombs"].append(bomb)
+            print("Bomb planted")
+            await asyncio.sleep(3)  # Bomb explodes after 3 seconds
+            await explode_bomb(bomb)
 
 async def explode_bomb(bomb):
     print("Exploding bomb")
     game_state["bombs"].remove(bomb)
     explosions = []
-    directions = [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+    directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
     
     for dx, dy in directions:
-        x, y = bomb["x"] + dx, bomb["y"] + dy
-        if 0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE:
-            explosions.append({"x": x, "y": y})
-            # Remove only breakable walls if they exist at the explosion coordinates
-            game_state["walls"] = [w for w in game_state["walls"] if not (w["x"] == x and w["y"] == y and w["breakable"])]
+        for i in range(1, bomb["range"] + 1):
+            x, y = bomb["x"] + dx * i, bomb["y"] + dy * i
+            if 0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE:
+                explosions.append({"x": x, "y": y})
+                # Check for walls
+                wall = next((w for w in game_state["walls"] if w["x"] == x and w["y"] == y), None)
+                if wall:
+                    if wall["breakable"]:
+                        game_state["walls"].remove(wall)
+                        # Chance to spawn a power-up
+                        if random.random() < 0.3:  # 30% chance to spawn a power-up
+                            power_up_type = random.choice(["Bombs", "Flames", "Speed"])
+                            game_state["powerUps"].append({"x": x, "y": y, "type": power_up_type})
+                    break  # Stop the explosion in this direction if it hits a wall
+            else:
+                break  # Stop the explosion if it goes out of bounds
+    
+    # Add the bomb's own position to the explosions
+    explosions.append({"x": bomb["x"], "y": bomb["y"]})
     
     game_state["explosions"] = explosions
     await broadcast_game_state()
     
-    # Check for player damage
+    # Check for player damage and power-up collection
     for player in game_state["players"]:
         if any(e["x"] == player["x"] and e["y"] == player["y"] for e in explosions):
             player["health"] -= 1
             if player["health"] <= 0:
                 game_state["players"].remove(player)
+        
+        # Check for power-up collection
+        for power_up in game_state["powerUps"]:
+            if power_up["x"] == player["x"] and power_up["y"] == player["y"]:
+                apply_power_up(player, power_up)
+                game_state["powerUps"].remove(power_up)
     
     await asyncio.sleep(EXPLOSION_DURATION)
     game_state["explosions"] = []
     await broadcast_game_state()
 
+def apply_power_up(player, power_up):
+    if power_up["type"] == "Bombs":
+        player["max_bombs"] = player.get("max_bombs", 1) + 1
+    elif power_up["type"] == "Flames":
+        player["flame_range"] = player.get("flame_range", 1) + 1
+    elif power_up["type"] == "Speed":
+        player["speed"] = min(player.get("speed", 3) + 1, 6)  # Max speed of 6 moves per second
 
 async def move_player(user_id: str, direction: str):
     player = next((p for p in game_state["players"] if p["id"] == user_id), None)
@@ -145,7 +179,7 @@ async def move_player(user_id: str, direction: str):
         return
 
     current_time = time()
-    if not hasattr(player, 'last_move_time') or current_time - player["last_move_time"] >= 1/3:
+    if not hasattr(player, 'last_move_time') or current_time - player["last_move_time"] >= 1 / player.get("speed", 3):
         new_x, new_y = player["x"], player["y"]
         
         if direction == "ArrowUp":
@@ -162,6 +196,15 @@ async def move_player(user_id: str, direction: str):
            not any(b["x"] == new_x and b["y"] == new_y for b in game_state["bombs"]):
             player["x"], player["y"] = new_x, new_y
             player["last_move_time"] = current_time
+
+            # Check for power-up collection
+            for power_up in game_state["powerUps"]:
+                if power_up["x"] == player["x"] and power_up["y"] == player["y"]:
+                    apply_power_up(player, power_up)
+                    game_state["powerUps"].remove(power_up)
+                    break  # Only collect one power-up at a time
+
+            await broadcast_game_state()
 
 async def broadcast_game_state():
     if connected_clients:
@@ -266,7 +309,10 @@ async def start_game():
             "x": spawn_x,
             "y": spawn_y,
             "health": 3,
-            "nickname": player_info["nickname"] or f"Player {i+1}"
+            "nickname": player_info["nickname"] or f"Player {i+1}",
+            "max_bombs": 1,
+            "flame_range": 1,
+            "speed": 3
         }
         game_state["players"].append(player)
 

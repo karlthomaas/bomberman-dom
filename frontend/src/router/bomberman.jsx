@@ -135,16 +135,21 @@ export const Bomberman = () => {
         playerElement.style.transition = 'all 0.1s ease-out';
         playerElement.style.zIndex = '10';
         
-        // Add health indicator
-        const healthElement = document.createElement('div');
-        healthElement.textContent = `HP: ${player.health}`;
-        healthElement.style.position = 'absolute';
-        healthElement.style.top = '-20px';
-        healthElement.style.left = '0';
-        healthElement.style.width = '100%';
-        healthElement.style.textAlign = 'center';
-        healthElement.style.fontSize = '12px';
-        playerElement.appendChild(healthElement);
+        // Add player info
+        const infoElement = document.createElement('div');
+        infoElement.style.position = 'absolute';
+        infoElement.style.top = '-40px';
+        infoElement.style.left = '0';
+        infoElement.style.width = '100%';
+        infoElement.style.textAlign = 'center';
+        infoElement.style.fontSize = '12px';
+        infoElement.innerHTML = `
+          HP: ${player.health}<br>
+          💣: ${player.max_bombs}<br>
+          🔥: ${player.flame_range}<br>
+          👟: ${player.speed}
+        `;
+        playerElement.appendChild(infoElement);
         
         playersContainer.appendChild(playerElement);
       });
@@ -159,8 +164,16 @@ export const Bomberman = () => {
   const getCellContent = (x, y) => {
     if (gameState.bombs.some(b => b.x === x && b.y === y)) return "💣";
     const wall = gameState.walls.find(w => w.x === x && w.y === y);
-    console.log(wall);
     if (wall) return wall.breakable ? "🧱" : "⬛";
+    const powerUp = gameState.powerUps.find(p => p.x === x && p.y === y);
+    if (powerUp) {
+      switch (powerUp.type) {
+        case "Bombs": return "🧨";
+        case "Flames": return "🔥";
+        case "Speed": return "👟";
+        default: return "";
+      }
+    }
     return "";
   };
 
@@ -187,10 +200,6 @@ export const Bomberman = () => {
         <div id="players-container" className="absolute top-0 left-0">
           {/* Player elements will be dynamically added here */}
         </div>
-      </div>
-      <div className="debug-info overflow-y-scroll fixed top-0 left-0">
-        <h3>Game State:</h3>
-        <pre id="debug-info"></pre>
       </div>
     </div>
   );
