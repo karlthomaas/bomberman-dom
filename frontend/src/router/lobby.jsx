@@ -1,11 +1,15 @@
 /** @jsx MiniFramework.createElement */
 import { MiniFramework } from "../utils/mini-framework";
+import Cookies from 'universal-cookie';
 
 function useRef(initialValue) {
   const [ref] = MiniFramework.useState({ current: initialValue });
   return ref;
 }
 
+function generateRandomId() {
+  return Math.random().toString(36).substr(2, 9);
+}
 
 export const Lobby = () => {
   const [players, setPlayers] = MiniFramework.useState([]);
@@ -23,6 +27,15 @@ export const Lobby = () => {
   }, [setPlayers, setMessages]);
 
 
+  const generateCookie = () => {
+    const cookies = new Cookies();
+    let userId = cookies.get('userId');
+    if (!userId) {
+      userId = generateRandomId();
+      cookies.set('userId', userId, { path: '/' });
+    }
+  };
+
   const handleWebSocketMessage = (event) => {
     const data = JSON.parse(event.data);
     if (data.type === 'playerList') {
@@ -37,6 +50,8 @@ export const Lobby = () => {
   };
 
   MiniFramework.useEffect(() => {
+    generateCookie();
+    
     const ws = new WebSocket(`ws://localhost:8000/lobby`);
     
     ws.onopen = () => {
