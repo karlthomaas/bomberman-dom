@@ -151,7 +151,9 @@ export const Bomberman = () => {
 
   const getCellContent = (x, y) => {
     if (gameState.bombs.some(b => b.x === x && b.y === y)) return "💣";
-    if (gameState.walls.some(w => w.x === x && w.y === y)) return "🧱";
+    const wall = gameState.walls.find(w => w.x === x && w.y === y);
+    console.log(wall);
+    if (wall) return wall.breakable ? "🧱" : "⬛";
     return "";
   };
 

@@ -29,14 +29,14 @@ def generate_walls():
     walls = []
     for y in range(GRID_SIZE):
         for x in range(GRID_SIZE):
-            # Add fixed walls in a grid pattern
+            # Add fixed unbreakable walls in a grid pattern
             if x % 2 == 1 and y % 2 == 1:
-                walls.append({"x": x, "y": y})
-            # Add random breakable walls, avoiding spawn areas
+                walls.append({"x": x, "y": y, "breakable": False})
+            # Add random breakable walls, avoiding spawn areas and unbreakable walls
             elif random.random() < 0.4:
                 # Check if the current position is not in or adjacent to a spawn area
                 if not any((x in range(sx, sx+2) and y in range(sy, sy+2)) for sx, sy in SPAWN_POSITIONS):
-                    walls.append({"x": x, "y": y})
+                    walls.append({"x": x, "y": y, "breakable": True})
     return walls
 
 def get_spawn_position(player_index):
@@ -120,8 +120,8 @@ async def explode_bomb(bomb):
         x, y = bomb["x"] + dx, bomb["y"] + dy
         if 0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE:
             explosions.append({"x": x, "y": y})
-            # Remove walls if they exist at the explosion coordinates
-            game_state["walls"] = [w for w in game_state["walls"] if not (w["x"] == x and w["y"] == y)]
+            # Remove only breakable walls if they exist at the explosion coordinates
+            game_state["walls"] = [w for w in game_state["walls"] if not (w["x"] == x and w["y"] == y and w["breakable"])]
     
     game_state["explosions"] = explosions
     await broadcast_game_state()
