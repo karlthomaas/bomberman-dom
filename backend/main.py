@@ -5,6 +5,8 @@ import asyncio
 import random
 from starlette.requests import Request
 from time import time
+import asyncio
+from datetime import datetime, timedelta
 
 app = FastAPI()
 
@@ -16,6 +18,10 @@ SPAWN_POSITIONS = [(0, 0), (GRID_SIZE-1, 0), (0, GRID_SIZE-1), (GRID_SIZE-1, GRI
 lobby_players: Dict[str, Dict] = {}
 
 connected_clients: Dict[str, Dict] = {}
+
+lobby_timer: datetime = None
+
+game_start_timer: datetime = None
 
 # Global game state
 game_state = {
@@ -216,8 +222,44 @@ async def broadcast_game_state():
             *[client_info["websocket"].send_text(message) for client_info in connected_clients.values()]
         )
 
+async def start_lobby_timer():
+    global lobby_timer
+    lobby_timer = datetime.now() + timedelta(seconds=20)
+    while datetime.now() < lobby_timer:
+        await broadcast_timer_state(True)
+        await asyncio.sleep(1)
+    await start_game_timer()
+
+async def start_game_timer():
+    global game_start_timer
+    game_start_timer = datetime.now() + timedelta(seconds=10)
+    while datetime.now() < game_start_timer:
+        await broadcast_timer_state(False)
+        await asyncio.sleep(1)
+    await start_game()
+
+async def broadcast_timer_state(is_lobby_timer):
+    global lobby_timer, game_start_timer
+    current_timer = lobby_timer if is_lobby_timer else game_start_timer
+    if current_timer:
+        time_remaining = (current_timer - datetime.now()).total_seconds()
+        if time_remaining > 0:
+            timer_data = {
+                "type": "timer",
+                "gameState": {
+                    "Timer": {
+                        "TimeRemaining": int(time_remaining * 1000000000),
+                        "LobbyTimer": is_lobby_timer
+                    }
+                }
+            }
+            await asyncio.gather(
+                *[player_info["websocket"].send_json(timer_data) for player_info in lobby_players.values()]
+            )
+
 @app.websocket("/lobby")
 async def lobby_websocket(websocket: WebSocket):
+    global lobby_timer, game_start_timer
     await websocket.accept()
     
     # Extract userId from cookies
@@ -234,14 +276,15 @@ async def lobby_websocket(websocket: WebSocket):
             data = await websocket.receive_json()
             print(f"🚀 Received data: {data}")
             if data.get("action") == "joinLobby":
-                print(f"🚀 Lobby player {user_id} joined")
                 nickname = data.get("nickname")
                 if nickname and isinstance(nickname, str):
                     lobby_players[user_id] = {"websocket": websocket, "nickname": nickname}
                     await websocket.send_json({"type": "joinedLobby"})
                     await broadcast_lobby_state()
-            elif data.get("action") == "startGame":
-                await start_game()
+                    if len(lobby_players) == 2 and lobby_timer is None:
+                        asyncio.create_task(start_lobby_timer())
+                    elif len(lobby_players) == 4:
+                        await start_game_timer()
             elif data.get("type") == "chat":
                 await broadcast_chat_message(data, user_id)
     except WebSocketDisconnect:
@@ -249,6 +292,9 @@ async def lobby_websocket(websocket: WebSocket):
     finally:
         lobby_players.pop(user_id, None)
         await broadcast_lobby_state()
+        if len(lobby_players) < 2:
+            lobby_timer = None
+            game_start_timer = None
 
 async def broadcast_chat_message(message, author_id):
     print(f"🚀 Broadcasting chat message from {author_id}: {message}, {lobby_players}")

@@ -336,14 +336,15 @@ function reconcileChildren(wipFiber, elements) {
     }
 
     if (index === 0) {
-      // If it's the first child, set it as a child
       wipFiber.child = newFiber;
-    } else if (element) {
-      // If it's not the first child, set it as a sibling
-      prevSibling.sibling = newFiber;
+    } else if (element && newFiber) {
+      if (prevSibling) {
+        prevSibling.sibling = newFiber;
+      }
     }
-
-    prevSibling = newFiber;
+    if (newFiber) {
+      prevSibling = newFiber;
+    }
     index++;
   }
 }

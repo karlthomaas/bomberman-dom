@@ -18,14 +18,19 @@ export const Lobby = () => {
   const [isJoined, setIsJoined] = MiniFramework.useState(false);
   const [messages, setMessages] = MiniFramework.useState([]);
   const [currentMessage, setCurrentMessage] = MiniFramework.useState('');
+  const [timer, setTimer] = MiniFramework.useState(null);
+  const [lobbyTimer, setLobbyTimer] = MiniFramework.useState(true);
 
   const setPlayersRef = useRef(setPlayers);
   const setMessagesRef = useRef(setMessages);
+  const setTimerRef = useRef(setTimer); 
+  const setLobbyTimerRef = useRef(setLobbyTimer);
   MiniFramework.useEffect(() => {
     setPlayersRef.current = setPlayers;
     setMessagesRef.current = setMessages;
-  }, [setPlayers, setMessages]);
-
+    setTimerRef.current = setTimer;
+    setLobbyTimerRef.current = setLobbyTimer;
+  }, [setPlayers, setMessages, setTimer, setLobbyTimer]);
 
   const generateCookie = () => {
     const cookies = new Cookies();
@@ -46,6 +51,10 @@ export const Lobby = () => {
     } else if (data.type === 'chat') {
       console.log('Received chat message:', data);
       setMessagesRef.current(prevMessages => [...prevMessages, data]);
+    } else if (data.type === 'timer') {
+      console.log('Received timer update:', data.gameState.Timer);
+      setTimerRef.current(Math.ceil(data.gameState.Timer.TimeRemaining / 1000000000));
+      setLobbyTimerRef.current(data.gameState.Timer.LobbyTimer);
     }
   };
 
@@ -71,12 +80,6 @@ export const Lobby = () => {
       }
     };
   }, []);
-
-  const startGame = () => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ action: 'startGame' }));
-    }
-  };
   
   const joinLobby = () => {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -127,13 +130,14 @@ export const Lobby = () => {
                 <li key={index} className="mb-1">{player.nickname}</li>
               ))}
             </ul>
+            {timer !== null && (
+              <p className="mt-2 font-semibold">
+                {players.length < 4
+                  ? `Waiting for players: ${timer} ${timer === 1 ? 'second' : 'seconds'}`
+                  : `Game starting in: ${timer} ${timer === 1 ? 'second' : 'seconds'}`}
+              </p>
+            )}
           </div>
-          <button 
-            onClick={startGame}
-            className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-            Start Game
-          </button>
           <div className="chat mb-4 flex flex-col max-w-screen-lg">
             <h3 className="text-xl font-semibold mb-2">Chat:</h3>
             <div className="messages mb-2">
@@ -146,7 +150,7 @@ export const Lobby = () => {
                 type="text"
               value={currentMessage}
               onChange={(e) => setCurrentMessage(e.target.value)}
-              onKeyPress={(e) => {
+              onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   sendChatMessage();
                 }
